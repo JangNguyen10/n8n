@@ -1,4 +1,4 @@
-# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Adding cmake)
+# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Syntax Fix)
 
 # STEP 1: CHOOSE A BASE N8N IMAGE (Using 1.94.0, Alpine-based)
 FROM n8nio/n8n:1.94.0
@@ -7,13 +7,13 @@ FROM n8nio/n8n:1.94.0
 USER root
 
 # STEP 3: INSTALL SYSTEM DEPENDENCIES for Alpine
-# Includes: ffmpeg, git, build-base (for make/g++), cmake, python3, py3-pip, and yt-dlp
+# Includes: ffmpeg, git, build-base, cmake, python3, py3-pip, and yt-dlp
 RUN apk update && \
     apk add --no-cache \
     ffmpeg \
     git \
     build-base \
-    cmake \ # <<< CMake is now added here
+    cmake \
     python3 \
     py3-pip && \
     pip3 install --no-cache-dir --break-system-packages yt-dlp && \
@@ -31,7 +31,7 @@ RUN rm -rf /opt/whisper.cpp && \
     echo "Verifying crucial submodule file ggml/src/ggml.c:" && \
     ls -lh ggml/src/ggml.c && \
     echo "Attempting to build whisper.cpp (default 'make' target)..." && \
-    make # This will invoke cmake internally if needed, then compile
+    make
 
 # STEP 5: DOWNLOAD WHISPER.CPP "SMALL" MULTILINGUAL MODEL
 # Model will be at /opt/whisper.cpp/models/ggml-small.bin
