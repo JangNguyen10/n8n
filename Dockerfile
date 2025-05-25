@@ -18,10 +18,17 @@ RUN apk update && \
     pip3 install --no-cache-dir --break-system-packages yt-dlp && \
     rm -rf /var/cache/apk/*
 
-# STEP 4: CLONE AND COMPILE WHISPER.CPP (with recursive clone for submodules)
+# STEP 4: CLONE AND COMPILE WHISPER.CPP (with recursive clone and diagnostics)
 # Executable will be at /opt/whisper.cpp/main
-RUN git clone --recursive https://github.com/ggerganov/whisper.cpp.git /opt/whisper.cpp && \
+RUN rm -rf /opt/whisper.cpp && \
+    echo "Cloning whisper.cpp recursively..." && \
+    git clone --recursive https://github.com/ggerganov/whisper.cpp.git /opt/whisper.cpp && \
     cd /opt/whisper.cpp && \
+    echo "Listing contents of /opt/whisper.cpp:" && \
+    ls -la && \
+    echo "Checking for crucial submodule file ggml/ggml.c:" && \
+    ls -lh ggml/ggml.c && \
+    echo "Attempting to build whisper.cpp main target..." && \
     make main
 
 # STEP 5: DOWNLOAD WHISPER.CPP "SMALL" MULTILINGUAL MODEL
