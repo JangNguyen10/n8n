@@ -1,18 +1,15 @@
-# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Definitive Multi-Stage)
+# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Multi-Stage, Corrected wget)
 
 # ---- Stage 1: Builder ----
 # This stage will download sources, compile whisper.cpp, and download models.
 FROM alpine:3.19 AS builder
 
-ARG WHISPER_CPP_REPO=https://github.com/ggerganov/whisper.cpp.git
-
-# Install build-time dependencies.
+# Install build-time dependencies:
 # - git: for cloning
-# - build-base: for make, g++, etc.
-# - cmake: required by whisper.cpp's Makefile
-# - bash: for running scripts
-# - curl: robust for downloads (whisper.cpp script can use it)
-# - gnu-wget: full wget for compatibility if download script insists on using wget with GNU options
+# - build-base: for make/g++
+# - cmake: for whisper.cpp's Makefile
+# - bash: for scripts
+# - curl and wget: for the model download script (whisper.cpp's script prefers wget)
 RUN apk update && \
     apk add --no-cache \
     git \
@@ -20,17 +17,18 @@ RUN apk update && \
     cmake \
     bash \
     curl \
-    gnu-wget && \
+    wget && \ # Corrected from gnu-wget to wget
     echo "--- Installed Wget version: ---" && \
     wget --version && \
     echo "--- Installed Curl version: ---" && \
     curl --version
 
-WORKDIR /app # Set WORKDIR for subsequent commands
+# Set working directory for whisper.cpp build
+WORKDIR /app
 
 # Clone whisper.cpp, initialize submodules, and compile
-RUN echo "Cloning whisper.cpp from ${WHISPER_CPP_REPO} into /app ..." && \
-    git clone ${WHISPER_CPP_REPO} . && \
+RUN echo "Cloning whisper.cpp (main repository)..." && \
+    git clone https://github.com/ggerganov/whisper.cpp.git . && \
     echo "Initializing and updating Git submodules (this will fetch ggml and its contents)..." && \
     git submodule init && \
     git submodule update --init --recursive && \
@@ -39,13 +37,13 @@ RUN echo "Cloning whisper.cpp from ${WHISPER_CPP_REPO} into /app ..." && \
     echo "Attempting to build whisper.cpp (default 'make' target)..." && \
     make
 
-# Download the model using whisper.cpp's script.
-# This runs in WORKDIR /app where whisper.cpp was cloned and built.
-# The script should now work with gnu-wget or fall back to curl.
+# Download the model using whisper.cpp's script
+# This script uses wget (now the full GNU version) or curl.
 RUN bash ./models/download-ggml-model.sh small
 
 
 # ---- Stage 2: Final Runtime Image ----
+# Start from the official n8n Alpine image
 FROM n8nio/n8n:1.94.0
 
 # Switch to root for installations
@@ -54,7 +52,8 @@ USER root
 # Install runtime dependencies:
 # - ffmpeg: for media processing
 # - python3, py3-pip: for yt-dlp
-# - bash: as scripts might expect it
+# - bash: as the model download script was run with it (though not strictly needed in final if script isn't re-run)
+# We include bash here just in case any copied script from whisper.cpp might still be invoked or for general utility.
 RUN apk update && \
     apk add --no-cache \
     ffmpeg \
@@ -64,12 +63,15 @@ RUN apk update && \
     pip3 install --no-cache-dir --break-system-packages yt-dlp && \
     rm -rf /var/cache/apk/*
 
-# Create the target directory for whisper.cpp artifacts and set it as WORKDIR for COPY.
-WORKDIR /opt/whisper.cpp
-
-# Copy compiled whisper.cpp artifacts (executables, libraries) and the downloaded models
-# from the builder stage's /app directory.
+# Create the target directory and copy whisper.cpp artifacts from the builder stage.
+# This includes compiled executables (like 'main' in /app/ or 'bin/main' in /app/build/) and models.
+# We copy the entire /app structure from builder which contains the compiled whisper.cpp and models.
 COPY --from=builder /app /opt/whisper.cpp
 
-# Set the PATH to include the whisper.cpp directory where 'main' and other executables are.
-# The `make` process for whisper.cpp places 'main' in the root of its source tree
+# Set the PATH to include the whisper.cpp directory.
+# 'make' for whisper.cpp (via CMake) usually places executables in a 'bin' subdirectory of its build dir,
+# or sometimes directly in the root (like './main').
+# Based on previous successful compile log, executables were in a 'bin' dir (e.g., /app/bin/main).
+# After COPY, this becomes /opt/whisper.cpp/bin/main.
+# The main executable is often also placed at /opt/whisper.cpp/main by the root Makefile.
+# Including both /opt/whisper.cpp and /opt/whisper
