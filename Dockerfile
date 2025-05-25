@@ -1,4 +1,4 @@
-# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Multi-Stage, Corrected wget)
+# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS - Final Syntax Correction)
 
 # ---- Stage 1: Builder ----
 # This stage will download sources, compile whisper.cpp, and download models.
@@ -17,7 +17,7 @@ RUN apk update && \
     cmake \
     bash \
     curl \
-    wget && \ # Corrected from gnu-wget to wget
+    wget && \
     echo "--- Installed Wget version: ---" && \
     wget --version && \
     echo "--- Installed Curl version: ---" && \
@@ -38,7 +38,6 @@ RUN echo "Cloning whisper.cpp (main repository)..." && \
     make
 
 # Download the model using whisper.cpp's script
-# This script uses wget (now the full GNU version) or curl.
 RUN bash ./models/download-ggml-model.sh small
 
 
@@ -50,10 +49,6 @@ FROM n8nio/n8n:1.94.0
 USER root
 
 # Install runtime dependencies:
-# - ffmpeg: for media processing
-# - python3, py3-pip: for yt-dlp
-# - bash: as the model download script was run with it (though not strictly needed in final if script isn't re-run)
-# We include bash here just in case any copied script from whisper.cpp might still be invoked or for general utility.
 RUN apk update && \
     apk add --no-cache \
     ffmpeg \
@@ -63,15 +58,16 @@ RUN apk update && \
     pip3 install --no-cache-dir --break-system-packages yt-dlp && \
     rm -rf /var/cache/apk/*
 
-# Create the target directory and copy whisper.cpp artifacts from the builder stage.
-# This includes compiled executables (like 'main' in /app/ or 'bin/main' in /app/build/) and models.
-# We copy the entire /app structure from builder which contains the compiled whisper.cpp and models.
+# Copy whisper.cpp artifacts from the builder stage.
 COPY --from=builder /app /opt/whisper.cpp
 
-# Set the PATH to include the whisper.cpp directory.
-# 'make' for whisper.cpp (via CMake) usually places executables in a 'bin' subdirectory of its build dir,
-# or sometimes directly in the root (like './main').
-# Based on previous successful compile log, executables were in a 'bin' dir (e.g., /app/bin/main).
-# After COPY, this becomes /opt/whisper.cpp/bin/main.
-# The main executable is often also placed at /opt/whisper.cpp/main by the root Makefile.
-# Including both /opt/whisper.cpp and /opt/whisper
+# Set the PATH to include the whisper.cpp executables.
+ENV PATH="/opt/whisper.cpp:/opt/whisper.cpp/bin:${PATH}"
+
+# Switch back to the non-root n8n user
+USER node
+
+# Set the working directory for n8n
+WORKDIR /home/node
+
+# Base n8n image handles the application start.
