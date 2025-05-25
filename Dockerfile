@@ -1,4 +1,4 @@
-# Dockerfile for n8n with ffmpeg, yt-dlp, and whisper.cpp (SMTE vPPLX-OS)
+# Dockerfile (Diagnostic Version for STEP 4)
 
 # STEP 1: CHOOSE A BASE N8N IMAGE (Using 1.94.0, Alpine-based)
 FROM n8nio/n8n:1.94.0
@@ -18,17 +18,22 @@ RUN apk update && \
     pip3 install --no-cache-dir --break-system-packages yt-dlp && \
     rm -rf /var/cache/apk/*
 
-# STEP 4: CLONE AND COMPILE WHISPER.CPP (with recursive clone and diagnostics)
-# Executable will be at /opt/whisper.cpp/main
+# STEP 4: CLONE AND COMPILE WHISPER.CPP (Enhanced Diagnostics for Submodule)
 RUN rm -rf /opt/whisper.cpp && \
+    echo "Current Git version:" && \
+    git --version && \
     echo "Cloning whisper.cpp recursively..." && \
     git clone --recursive https://github.com/ggerganov/whisper.cpp.git /opt/whisper.cpp && \
     cd /opt/whisper.cpp && \
-    echo "Listing contents of /opt/whisper.cpp:" && \
+    echo "--- Git Submodule Status (after clone --recursive) ---" && \
+    git submodule status --recursive && \
+    echo "--- Listing contents of /opt/whisper.cpp (root of whisper.cpp) ---" && \
     ls -la && \
-    echo "Checking for crucial submodule file ggml/ggml.c:" && \
+    echo "--- Listing contents of /opt/whisper.cpp/ggml directory (if it exists) ---" && \
+    ls -la ggml && \
+    echo "--- Checking for crucial submodule file ggml/ggml.c specifically ---" && \
     ls -lh ggml/ggml.c && \
-    echo "Attempting to build whisper.cpp main target..." && \
+    echo "--- Attempting to build whisper.cpp main target (EXPECTED TO FAIL if ggml.c is missing) ---" && \
     make main
 
 # STEP 5: DOWNLOAD WHISPER.CPP "SMALL" MULTILINGUAL MODEL
