@@ -4,6 +4,7 @@
 # Includes whisper.cpp compiled from latest source with generic CPU flags
 # Includes ffmpeg, sqlite CLI, and build tools for better-sqlite3
 # Includes better-sqlite3 for Node.js custom functions
+# Includes NODE_PATH environment variable for global module resolution
 
 # ---- Stage 1: Builder ----
 # This stage will download sources, compile whisper.cpp for generic CPU,
@@ -84,20 +85,19 @@ RUN echo "Attempting to install better-sqlite3 globally using npm..." && \
     npm install -g better-sqlite3 --build-from-source && \
     echo "--- better-sqlite3 successfully installed globally ---"
 
-# OPTIONAL CLEANUP: If image size is critical, you can remove build dependencies after better-sqlite3 is built.
-# For now, keeping them doesn't hurt and ensures the build environment is robust if other native modules are needed.
-# To remove them, you would add:
-# RUN apk del python3 make g++ && rm -rf /var/cache/apk/* && echo "--- Build dependencies removed ---"
-
 # Copy the entire compiled whisper.cpp directory (including models and executables)
 # from the builder stage to /opt/whisper.cpp in the final image.
 COPY --from=builder /app /opt/whisper.cpp
 
-# Set LD_LIBRARY_PATH for any remaining shared libraries from whisper.cpp build.
+# Set LD_LIBRARY_PATH for whisper.cpp
 ENV LD_LIBRARY_PATH="/opt/whisper.cpp/build/src:/opt/whisper.cpp/build/ggml/src:${LD_LIBRARY_PATH}"
 
-# Set PATH for whisper.cpp executables.
+# Set PATH for whisper.cpp executables
 ENV PATH="/opt/whisper.cpp/build/bin:/opt/whisper.cpp/build:/opt/whisper.cpp:${PATH}"
+
+# Set NODE_PATH to include global npm modules directory
+# This helps Node.js 'require()' find globally installed packages like better-sqlite3
+ENV NODE_PATH="/usr/local/lib/node_modules:${NODE_PATH}"
 
 # Ensure key executables copied from the builder stage are executable.
 RUN \
