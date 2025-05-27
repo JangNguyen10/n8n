@@ -3,6 +3,7 @@
 # Base n8n version: 1.94.0
 # Includes whisper.cpp compiled from latest source with generic CPU flags
 # Includes ffmpeg and sqlite
+# MODIFICATION: Will now also include better-sqlite3 for Node.js
 
 # ---- Stage 1: Builder ----
 # This stage will download sources, compile whisper.cpp for generic CPU,
@@ -63,14 +64,26 @@ USER root
 
 # Install runtime dependencies:
 # - ffmpeg: for media processing (Node 5 in our AGIN plan)
-# - sqlite: for SQLite database interactions (Node 7 & AGIN's persistent store)
+# - sqlite: for SQLite database interactions (CLI tool - already present)
+# - nodejs & npm: To install better-sqlite3 (if not already sufficiently available in base n8n image for global npm install)
+# The base n8n image (n8nio/n8n:1.94.0) is Node.js based, so node and npm should be available.
+# We will add better-sqlite3 using npm.
 RUN apk update && \
     apk add --no-cache \
     ffmpeg \
     sqlite && \
     # Clean up apk cache to reduce image size
     rm -rf /var/cache/apk/* && \
-    echo "--- Runtime dependencies (ffmpeg, sqlite) installed ---"
+    echo "--- Runtime dependencies (ffmpeg, sqlite CLI) installed ---"
+
+# Install better-sqlite3 globally using npm
+# This makes it accessible to Node.js scripts executed by n8n's Function node
+# It's important to do this AFTER base dependencies are installed and BEFORE switching back to 'node' user if possible,
+# or ensure the 'node' user has permissions to use globally installed npm packages.
+# The n8n base image should have Node.js and npm.
+RUN echo "Attempting to install better-sqlite3 globally using npm..." && \
+    npm install -g better-sqlite3 --build-from-source && \
+    echo "--- better-sqlite3 installed globally ---"
 
 # Copy the entire compiled whisper.cpp directory (including models and executables)
 # from the builder stage to /opt/whisper.cpp in the final image.
