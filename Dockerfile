@@ -2,8 +2,8 @@
 # For Adaptive Game Intelligence Nexus (AGIN)
 # Base n8n version: 1.94.0
 # Includes whisper.cpp compiled from latest source with generic CPU flags
-# Includes ffmpeg and sqlite
-# MODIFICATION: Will now also include better-sqlite3 for Node.js
+# Includes ffmpeg, sqlite CLI, and build tools for better-sqlite3
+# Includes better-sqlite3 for Node.js custom functions
 
 # ---- Stage 1: Builder ----
 # This stage will download sources, compile whisper.cpp for generic CPU,
@@ -62,50 +62,48 @@ FROM n8nio/n8n:1.94.0
 # Switch to root user for installations
 USER root
 
-# Install runtime dependencies:
-# - ffmpeg: for media processing (Node 5 in our AGIN plan)
-# - sqlite: for SQLite database interactions (CLI tool - already present)
-# - nodejs & npm: To install better-sqlite3 (if not already sufficiently available in base n8n image for global npm install)
-# The base n8n image (n8nio/n8n:1.94.0) is Node.js based, so node and npm should be available.
-# We will add better-sqlite3 using npm.
+# Install runtime dependencies AND ESSENTIAL BUILD DEPENDENCIES for better-sqlite3
+# - ffmpeg: for media processing
+# - sqlite: for SQLite database interactions (CLI tool)
+# - python3, make, g++: Required by node-gyp to compile better-sqlite3 from source
 RUN apk update && \
     apk add --no-cache \
     ffmpeg \
-    sqlite && \
+    sqlite \
+    python3 \
+    make \
+    g++ && \
     # Clean up apk cache to reduce image size
     rm -rf /var/cache/apk/* && \
-    echo "--- Runtime dependencies (ffmpeg, sqlite CLI) installed ---"
+    echo "--- Runtime & Build dependencies (ffmpeg, sqlite CLI, python3, make, g++) installed ---"
 
 # Install better-sqlite3 globally using npm
-# This makes it accessible to Node.js scripts executed by n8n's Function node
-# It's important to do this AFTER base dependencies are installed and BEFORE switching back to 'node' user if possible,
-# or ensure the 'node' user has permissions to use globally installed npm packages.
-# The n8n base image should have Node.js and npm.
+# This makes it accessible to Node.js scripts executed by n8n's Function node.
+# The --build-from-source flag is crucial for native addons.
 RUN echo "Attempting to install better-sqlite3 globally using npm..." && \
     npm install -g better-sqlite3 --build-from-source && \
-    echo "--- better-sqlite3 installed globally ---"
+    echo "--- better-sqlite3 successfully installed globally ---"
+
+# OPTIONAL CLEANUP: If image size is critical, you can remove build dependencies after better-sqlite3 is built.
+# For now, keeping them doesn't hurt and ensures the build environment is robust if other native modules are needed.
+# To remove them, you would add:
+# RUN apk del python3 make g++ && rm -rf /var/cache/apk/* && echo "--- Build dependencies removed ---"
 
 # Copy the entire compiled whisper.cpp directory (including models and executables)
 # from the builder stage to /opt/whisper.cpp in the final image.
 COPY --from=builder /app /opt/whisper.cpp
 
 # Set LD_LIBRARY_PATH for any remaining shared libraries from whisper.cpp build.
-# Static linking aims to reduce reliance on this, but good as a fallback.
 ENV LD_LIBRARY_PATH="/opt/whisper.cpp/build/src:/opt/whisper.cpp/build/ggml/src:${LD_LIBRARY_PATH}"
 
 # Set PATH for whisper.cpp executables.
-# whisper-cli and other binaries are typically in 'build/bin/' or 'build/' after compilation.
-# Including /opt/whisper.cpp itself in case some scripts or main executable are there.
 ENV PATH="/opt/whisper.cpp/build/bin:/opt/whisper.cpp/build:/opt/whisper.cpp:${PATH}"
 
-# Ensure key executables copied from the builder stage are executable by the runtime user.
-# (Permissions should ideally be preserved by COPY --from=builder, but this is an explicit safeguard)
-# Specifically targeting common locations for whisper-cli or main executables.
+# Ensure key executables copied from the builder stage are executable.
 RUN \
     if [ -f /opt/whisper.cpp/build/whisper-cli ]; then chmod +x /opt/whisper.cpp/build/whisper-cli; echo "Set +x on /opt/whisper.cpp/build/whisper-cli"; fi && \
     if [ -f /opt/whisper.cpp/build/bin/whisper-cli ]; then chmod +x /opt/whisper.cpp/build/bin/whisper-cli; echo "Set +x on /opt/whisper.cpp/build/bin/whisper-cli"; fi && \
     if [ -f /opt/whisper.cpp/main ]; then chmod +x /opt/whisper.cpp/main; echo "Set +x on /opt/whisper.cpp/main"; fi && \
-    # General execute permission for anything in build/bin if it exists
     if [ -d /opt/whisper.cpp/build/bin ]; then chmod +x /opt/whisper.cpp/build/bin/*; fi && \
     echo "--- Executable permissions checked/set for whisper.cpp tools ---"
 
@@ -113,11 +111,6 @@ RUN \
 USER node
 
 # Set the working directory for n8n.
-# The base n8n image usually sets this to /home/node.
-# N8N_USER_FOLDER is an environment variable that dictates where n8n stores its own data (like SQLite DB, config).
 WORKDIR /home/node
-
-# The base n8n image's CMD or ENTRYPOINT will start n8n.
-# Default n8n port is 5678 (already exposed by base image and managed by Render).
 
 RUN echo "--- n8n Docker image for AGIN build complete. Current user: $(whoami), Working directory: $(pwd) ---"
