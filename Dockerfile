@@ -14,7 +14,7 @@ FROM alpine:3.19 AS builder
 
 # Define whisper.cpp version as an argument to easily update it
 # Please check for the latest stable release tag on the whisper.cpp GitHub repository.
-# As of last check, v1.5.5 was a recent stable version.
+# Using v1.5.5 as an example.
 ARG WHISPER_CPP_VERSION=v1.5.5
 
 # Install build-time dependencies for whisper.cpp and fetching assets
@@ -30,14 +30,15 @@ RUN apk update && \
 
 WORKDIR /app
 
-# Clone specific version of whisper.cpp, initialize submodules
-RUN echo "Cloning whisper.cpp version ${WHISPER_CPP_VERSION} from GitHub..." && \
-    git clone --depth 1 --branch ${WHISPER_CPP_VERSION} https://github.com/ggerganov/whisper.cpp.git . && \
+# Clone specific version of whisper.cpp (full history for the tag), initialize submodules
+# Removed --depth 1 for potentially more robust submodule initialization.
+# Removed the 'ls -lh ggml/src/ggml.c' verification; 'make' will be the true test.
+RUN echo "Cloning whisper.cpp version ${WHISPER_CPP_VERSION} (full tag history) from GitHub..." && \
+    git clone --branch ${WHISPER_CPP_VERSION} https://github.com/ggerganov/whisper.cpp.git . && \
     echo "Initializing and updating Git submodules (fetches ggml)..." && \
     git submodule init && \
     git submodule update --init --recursive && \
-    echo "Verifying crucial submodule file ggml/src/ggml.c:" && \
-    ls -lh ggml/src/ggml.c
+    echo "--- whisper.cpp source and submodules (like ggml) should now be checked out ---"
 
 # Compile whisper.cpp
 # Using CMAKE_ARGS for generic CPU compatibility (no AVX, etc.)
@@ -98,12 +99,9 @@ RUN echo "Attempting to install better-sqlite3 globally using npm..." && \
 COPY --from=builder /app /opt/whisper.cpp
 
 # Set LD_LIBRARY_PATH for whisper.cpp (if its components rely on shared libs within its build dir)
-# This is generally good practice if whisper.cpp was compiled with shared libraries,
-# though our CMAKE_ARGS aim for static linking of ggml/whisper.
 ENV LD_LIBRARY_PATH="/opt/whisper.cpp/build/src:/opt/whisper.cpp/build/ggml/src:${LD_LIBRARY_PATH}"
 
 # Set PATH for whisper.cpp executables (main executable and tools in build/bin)
-# Refined PATH to be more precise
 ENV PATH="/opt/whisper.cpp:/opt/whisper.cpp/build/bin:${PATH}"
 
 # Set NODE_PATH to include global npm modules directory
@@ -120,8 +118,6 @@ RUN \
     echo "--- Executable permissions checked/set for whisper.cpp tools ---"
 
 # Add HEALTHCHECK for n8n application monitoring
-# n8n listens on port 5678 by default. The base path '/' usually returns 200 OK if n8n is running.
-# --start-period gives n8n time to initialize before checks count against retries.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --spider --quiet http://localhost:5678/ || exit 1
 
